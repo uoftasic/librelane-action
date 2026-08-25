@@ -1,0 +1,18 @@
+# Proves the reusable workflow actually works on a GitHub runner, using the
+# bundled example design. Runs on every push and weekly, so we find out that an
+# upstream image or the PDK mirror moved before a student does.
+name: Self-test
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'      # Mondays, 06:00 UTC
+
+jobs:
+  selftest:
+    uses: ./.github/workflows/harden.yml
+    with:
+      design-dir: example
+      action-repo: ${{ github.repository }}
+      action-ref: ${{ github.sha }}

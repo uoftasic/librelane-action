@@ -1,0 +1,110 @@
+# Reusable workflow: take a student's RTL to GDSII with nothing installed locally.
+#
+# A course repo calls it like this:
+#
+#   jobs:
+#     harden:
+#       uses: uoftasic/librelane-action/.github/workflows/harden.yml@main
+#       with:
+#         design-dir: labs/lab-05-elevator
+#
+# It runs the SAME LibreLane version as the workbench, on the SAME config.json the
+# student would run locally. It is not a hosted abstraction — it is the real flow on
+# someone else's computer.
+name: Harden to GDSII
+
+on:
+  workflow_call:
+    inputs:
+      design-dir:
+        description: Directory containing config.json, relative to the repo root
+        required: true
+        type: string
+      config:
+        description: Config filename within design-dir
+        required: false
+        default: config.json
+        type: string
+      pdk-version:
+        description: open_pdks commit to pin. Defaults to the workbench's build.
+        required: false
+        default: 7b70722e33c03fcb5dabcf4d479fb0822d9251c9
+        type: string
+      action-repo:
+        description: Where the helper scripts live. Override only to self-test.
+        required: false
+        default: uoftasic/librelane-action
+        type: string
+      action-ref:
+        description: Ref of action-repo to use.
+        required: false
+        default: main
+        type: string
+
+concurrency:
+  group: harden-${{ github.workflow }}-${{ github.ref }}-${{ inputs.design-dir }}
+  cancel-in-progress: true
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    # The official LibreLane image, pinned to the version the workbench ships.
+    # NOTE: this pins LibreLane, NOT the tools it drives — this image carries
+    # different Yosys/OpenROAD/Magic builds than the workbench, so results land
+    # within a percent or two rather than identical. The summary says so.
+    container: ghcr.io/librelane/librelane:3.0.2
+    timeout-minutes: 45
+
+    steps:
+      # The student's repo.
+      - name: Check out the design
+        uses: actions/checkout@v4
+
+      # This repo, for the helper scripts. A reusable workflow only gets the
+      # caller's files, so the scripts have to be fetched explicitly.
+      - name: Check out the action's scripts
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.action-repo }}
+          ref: ${{ inputs.action-ref }}
+          path: .librelane-action
+
+      # The PDK is ~2 GB and never changes. Caching turns a slow first run into a
+      # fast every-other run.
+      - name: Cache the SKY130 PDK
+        uses: actions/cache@v4
+        with:
+          path: .pdks
+          key: ciel-sky130-${{ inputs.pdk-version }}
+
+      - name: Refuse a config that does not pin its PDK
+        run: python3 .librelane-action/scripts/check_config.py "${{ inputs.design-dir }}/${{ inputs.config }}"
+
+      - name: Pin the PDK
+        run: ciel enable --pdk-root "$PWD/.pdks" --pdk sky130 "${{ inputs.pdk-version }}"
+
+      - name: Harden
+        working-directory: ${{ inputs.design-dir }}
+        run: |
+          set -o pipefail
+          librelane --pdk-root "$GITHUB_WORKSPACE/.pdks" "${{ inputs.config }}" 2>&1 | tee flow.log
+
+      # Runs even when the flow failed — a student whose flow died needs the
+      # summary more than one whose flow passed.
+      - name: Tell the student what happened
+        if: always()
+        run: python3 .librelane-action/scripts/summarise.py "${{ inputs.design-dir }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload your chip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chip-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            ${{ inputs.design-dir }}/runs/*/final/gds/*.gds
+            ${{ inputs.design-dir }}/runs/*/final/render/*.png
+            ${{ inputs.design-dir }}/runs/*/final/metrics.json
+            ${{ inputs.design-dir }}/runs/*/final/nl/*.nl.v
+            ${{ inputs.design-dir }}/flow.log

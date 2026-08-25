@@ -1,0 +1,19 @@
+# Copy this into your course repo as .github/workflows/harden.yml
+#
+# Every push that touches your design hardens it to a GDSII and leaves the layout,
+# a picture of it, and the sign-off numbers on the Actions page. You need nothing
+# installed — this works from a Chromebook.
+name: Harden my design
+
+on:
+  push:
+    paths:
+      - 'labs/lab-05-elevator/**'
+      - '.github/workflows/harden.yml'
+  workflow_dispatch:        # lets you run it by hand from the Actions tab
+
+jobs:
+  harden:
+    uses: uoftasic/librelane-action/.github/workflows/harden.yml@main
+    with:
+      design-dir: labs/lab-05-elevator
