@@ -22,28 +22,22 @@ def latest_run(design_dir: Path) -> Path | None:
     return runs[-1] if runs else None
 
 
-def tool_versions() -> dict[str, str]:
+def tool_versions(design_dir: Path) -> dict[str, str]:
     """The versions that actually produced this chip.
 
     Surfaced deliberately: LibreLane pins itself but NOT the tools it drives, so a
     CI chip and a workbench chip differ. Showing both makes that visible instead of
     mysterious.
+
+    The harden step writes these from *inside* the container, because this script
+    runs on the runner host where the tools do not exist.
     """
-    probes = {
-        "LibreLane": ["librelane", "--version"],
-        "Yosys": ["yosys", "-V"],
-        "OpenROAD": ["openroad", "-version"],
-        "Magic": ["magic", "--version"],
-    }
-    out = {}
-    for name, cmd in probes.items():
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            line = (r.stdout or r.stderr).strip().splitlines()
-            out[name] = line[0].strip() if line else "?"
-        except Exception:
-            out[name] = "not found"
-    return out
+    path = design_dir / "tool-versions.txt"
+    if not path.is_file():
+        return {}
+    labels = ["LibreLane", "Yosys", "OpenROAD", "Magic"]
+    lines = [l.strip() for l in path.read_text().splitlines() if l.strip()]
+    return {labels[i]: lines[i] for i in range(min(len(labels), len(lines)))}
 
 
 def fmt(v, unit="", nd=2):
@@ -76,7 +70,7 @@ def main() -> int:
               "out too tight for power straps. Add `\"FP_CORE_UTIL\": 30` to `config.json`.")
         print("- `Unable to find a valid ...` — a path in `VERILOG_FILES` does not match "
               "any file.\n")
-        _print_versions()
+        _print_versions(design_dir)
         return 0
 
     m = json.loads(metrics_path.read_text())
@@ -143,12 +137,14 @@ def main() -> int:
             print(f"- `{render[0].name}` — a picture of it. **Open this one.**")
         print()
 
-    _print_versions()
+    _print_versions(design_dir)
     return 0
 
 
-def _print_versions() -> None:
-    v = tool_versions()
+def _print_versions(design_dir: Path) -> None:
+    v = tool_versions(design_dir)
+    if not v:
+        return
     print("<details><summary>Which tools built this</summary>\n")
     print("| Tool | Version |")
     print("|---|---|")

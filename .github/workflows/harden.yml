@@ -11,6 +11,16 @@
 # It runs the SAME LibreLane version as the workbench, on the SAME config.json the
 # student would run locally. It is not a hosted abstraction — it is the real flow on
 # someone else's computer.
+#
+# ── Why this does NOT use `container:` ───────────────────────────────────────
+# The official LibreLane image is nix-based and has no dynamic loader at the paths
+# the runner expects, so the runner's bundled Node cannot execute inside it:
+#
+#     exec /__e/node24/bin/node: no such file or directory
+#
+# That breaks every JavaScript action — checkout, cache, upload-artifact. So the job
+# runs on a normal runner and invokes LibreLane through `docker run` for exactly the
+# step that needs it. Verified on a real runner, 2026-08-25.
 name: Harden to GDSII
 
 on:
@@ -24,6 +34,11 @@ on:
         description: Config filename within design-dir
         required: false
         default: config.json
+        type: string
+      librelane-image:
+        description: Pinned LibreLane image. Match the workbench.
+        required: false
+        default: ghcr.io/librelane/librelane:3.0.2
         type: string
       pdk-version:
         description: open_pdks commit to pin. Defaults to the workbench's build.
@@ -48,20 +63,14 @@ concurrency:
 jobs:
   harden:
     runs-on: ubuntu-latest
-    # The official LibreLane image, pinned to the version the workbench ships.
-    # NOTE: this pins LibreLane, NOT the tools it drives — this image carries
-    # different Yosys/OpenROAD/Magic builds than the workbench, so results land
-    # within a percent or two rather than identical. The summary says so.
-    container: ghcr.io/librelane/librelane:3.0.2
     timeout-minutes: 45
 
     steps:
-      # The student's repo.
       - name: Check out the design
         uses: actions/checkout@v4
 
-      # This repo, for the helper scripts. A reusable workflow only gets the
-      # caller's files, so the scripts have to be fetched explicitly.
+      # A reusable workflow only gets the caller's files, so the helper scripts
+      # have to be fetched explicitly.
       - name: Check out the action's scripts
         uses: actions/checkout@v4
         with:
@@ -69,8 +78,8 @@ jobs:
           ref: ${{ inputs.action-ref }}
           path: .librelane-action
 
-      # The PDK is ~2 GB and never changes. Caching turns a slow first run into a
-      # fast every-other run.
+      # ~2 GB and it never changes. Caching turns a slow first run into a fast
+      # every-other run.
       - name: Cache the SKY130 PDK
         uses: actions/cache@v4
         with:
@@ -80,14 +89,32 @@ jobs:
       - name: Refuse a config that does not pin its PDK
         run: python3 .librelane-action/scripts/check_config.py "${{ inputs.design-dir }}/${{ inputs.config }}"
 
-      - name: Pin the PDK
-        run: ciel enable --pdk-root "$PWD/.pdks" --pdk sky130 "${{ inputs.pdk-version }}"
+      - name: Pull LibreLane
+        run: docker pull -q "${{ inputs.librelane-image }}"
 
       - name: Harden
-        working-directory: ${{ inputs.design-dir }}
+        env:
+          IMAGE: ${{ inputs.librelane-image }}
+          DESIGN_DIR: ${{ inputs.design-dir }}
+          CONFIG: ${{ inputs.config }}
+          PDK_VERSION: ${{ inputs.pdk-version }}
         run: |
           set -o pipefail
-          librelane --pdk-root "$GITHUB_WORKSPACE/.pdks" "${{ inputs.config }}" 2>&1 | tee flow.log
+          mkdir -p .pdks
+          # --user keeps the outputs owned by the runner user so upload-artifact
+          # can read them.
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/work" \
+            -e PDK_ROOT=/work/.pdks \
+            -w "/work/$DESIGN_DIR" \
+            "$IMAGE" bash -c "
+              set -e
+              ciel enable --pdk-root /work/.pdks --pdk sky130 '$PDK_VERSION' >/dev/null
+              { librelane --version; yosys -V; openroad -version; magic --version; } \
+                > /work/$DESIGN_DIR/tool-versions.txt 2>&1 || true
+              librelane --pdk-root /work/.pdks '$CONFIG'
+            " 2>&1 | tee "$DESIGN_DIR/flow.log"
 
       # Runs even when the flow failed — a student whose flow died needs the
       # summary more than one whose flow passed.
