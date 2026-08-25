@@ -134,4 +134,5 @@ jobs:
             ${{ inputs.design-dir }}/runs/*/final/render/*.png
             ${{ inputs.design-dir }}/runs/*/final/metrics.json
             ${{ inputs.design-dir }}/runs/*/final/nl/*.nl.v
+            ${{ inputs.design-dir }}/tool-versions.txt
             ${{ inputs.design-dir }}/flow.log

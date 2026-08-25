@@ -86,11 +86,43 @@ measurably different chip. That is why a real tapeout pins every tool by hash.
 | `scripts/check_config.py` | refuses an unpinned PDK, with an explanation |
 | `scripts/summarise.py` | writes the job summary; runs on failure too |
 
+## Verified on a real runner
+
+Run [32909788285](https://github.com/vproHacks/librelane-action/actions/runs/32909788285),
+`ubuntu-latest`, cold cache:
+
+| | |
+|---|---|
+| Total wall clock | **231 s** (includes the first-time ~2 GB PDK download) |
+| Cells placed | 107 |
+| Die area | 1644.49 µm² |
+| Setup slack | +13.61 ns |
+| DRC / LVS / antenna | **0 / 0 / 0** |
+| Artifact | 221 KB — GDS, render PNG, metrics, gate netlist, flow log |
+
+Cached runs skip the PDK download.
+
+### Why it does not use `container:`
+
+The first attempt ran the job *inside* the LibreLane image and failed immediately:
+
+```
+exec /__e/node24/bin/node: no such file or directory
+```
+
+The image is nix-based and has no dynamic loader where the runner expects one, so the runner's
+bundled Node cannot execute inside it — which breaks **every** JavaScript action:
+`checkout`, `cache`, `upload-artifact`.
+
+So the job runs on a normal runner and shells into the image with `docker run` for exactly the
+step that needs it. Anyone tempted to "simplify" this back to `container:` should read this
+paragraph first.
+
 ## Before this ships
 
-- [ ] Move to its own repo `uoftasic/librelane-action` (the second `actions/checkout` in
-      `harden.yml` already points there)
-- [ ] Run it end to end on a real public repo — everything so far is verified locally, in the
-      same container Actions would use, but **not yet on a GitHub runner**
-- [ ] Confirm runner disk headroom for the 5.5 GB image plus a ~2 GB PDK
-- [ ] Decide the retention window (currently 30 days)
+- [ ] Move to `uoftasic/librelane-action` (the `action-repo` input already defaults there)
+- [ ] Re-run the self-test once it is under the org, since `action-repo` will resolve differently
+- [ ] Decide the artifact retention window (currently 30 days)
+- [ ] Decide whether a failing sign-off check should fail the job, or just report — currently it
+      reports, on the grounds that a student learning from a violated chip is better served by a
+      readable summary than a red X
