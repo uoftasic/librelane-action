@@ -1,15 +1,22 @@
 # librelane-action
 
-Takes a student's RTL to a **GDSII** in GitHub Actions, so a first-year with a Chromebook and
-no Docker can still finish the digital track.
+Hardens a design to **GDSII** in GitHub Actions — the same LibreLane, on the same
+`config.json` a student would run locally, on someone else's computer.
 
-Built because [decision D5](../../planning/decisions.md) put TinyTapeout out of scope, which
-removed the only browser-only route to a GDSII and left charter outcome #2 — *"students will
-have generated GDSII files for designs of their own choosing"* — sitting behind a 20 GB Docker
-install.
+**What it is for** (decision D11):
 
-This is **not** TinyTapeout, not a shuttle, and not a hosted abstraction. It is the same
-LibreLane, on the same `config.json` the student would run locally, on someone else's computer.
+- **Course CI for students.** Push, and get a hardened chip plus a sign-off summary without
+  tying up the laptop you are trying to work on. A LibreLane run is a minute of full CPU; this
+  moves it off your machine.
+- **Regression testing for the team.** Every lab design re-hardens on a schedule, so a
+  workbench image bump that breaks a lab is caught by us rather than by a student.
+
+**What it is not.** It was originally built to give students who cannot install Docker a route
+to a GDSII. Decision D10 put those machines out of scope, so that framing is retired — the
+workbench is required for DD103, and this is a convenience and a safety net, not an escape
+hatch. Do not reintroduce "no Docker needed" into student-facing text.
+
+It is also **not** TinyTapeout, not a shuttle, and not a hosted abstraction.
 
 ## Use it
 
