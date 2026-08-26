@@ -1,8 +1,8 @@
 # Copy this into your course repo as .github/workflows/harden.yml
 #
 # Every push that touches your design hardens it to a GDSII and leaves the layout,
-# a picture of it, and the sign-off numbers on the Actions page. You need nothing
-# installed — this works from a Chromebook.
+# a picture of it, and the sign-off numbers on the Actions page — without tying up
+# your own machine for the length of the run.
 name: Harden my design
 
 on:
